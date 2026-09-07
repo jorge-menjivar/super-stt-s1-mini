@@ -1,0 +1,194 @@
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }} ${{ matrix.suffix }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # CPU (x86_64)
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cpu,
+              features: "",
+              cuda_cap: "",
+              cuda_image: "",
+            }
+
+          # CUDA 12 — sm75..sm90. cuda_cap → CUDA_COMPUTE_CAP; built inside the
+          # nvidia/cuda devel image (carries nvcc) via cross's image override.
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cuda12-sm75,
+              features: cuda,
+              cuda_cap: "75",
+              cuda_image: "nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04",
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cuda12-sm80,
+              features: cuda,
+              cuda_cap: "80",
+              cuda_image: "nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04",
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cuda12-sm86,
+              features: cuda,
+              cuda_cap: "86",
+              cuda_image: "nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04",
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cuda12-sm89,
+              features: cuda,
+              cuda_cap: "89",
+              cuda_image: "nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04",
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cuda12-sm90,
+              features: cuda,
+              cuda_cap: "90",
+              cuda_image: "nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04",
+            }
+
+          # CUDA 13 — sm75..sm120 (sm100/sm120 are Blackwell, CUDA 13 only).
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cuda13-sm75,
+              features: cuda,
+              cuda_cap: "75",
+              cuda_image: "nvidia/cuda:13.0.2-cudnn-devel-ubuntu22.04",
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cuda13-sm80,
+              features: cuda,
+              cuda_cap: "80",
+              cuda_image: "nvidia/cuda:13.0.2-cudnn-devel-ubuntu22.04",
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cuda13-sm86,
+              features: cuda,
+              cuda_cap: "86",
+              cuda_image: "nvidia/cuda:13.0.2-cudnn-devel-ubuntu22.04",
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cuda13-sm89,
+              features: cuda,
+              cuda_cap: "89",
+              cuda_image: "nvidia/cuda:13.0.2-cudnn-devel-ubuntu22.04",
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cuda13-sm90,
+              features: cuda,
+              cuda_cap: "90",
+              cuda_image: "nvidia/cuda:13.0.2-cudnn-devel-ubuntu22.04",
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cuda13-sm100,
+              features: cuda,
+              cuda_cap: "100",
+              cuda_image: "nvidia/cuda:13.0.2-cudnn-devel-ubuntu22.04",
+            }
+          - {
+              target: x86_64-unknown-linux-gnu,
+              suffix: cuda13-sm120,
+              features: cuda,
+              cuda_cap: "120",
+              cuda_image: "nvidia/cuda:13.0.2-cudnn-devel-ubuntu22.04",
+            }
+
+          # CPU (aarch64) — cross-compiled, no CUDA on ARM.
+          - {
+              target: aarch64-unknown-linux-gnu,
+              suffix: cpu,
+              features: "",
+              cuda_cap: "",
+              cuda_image: "",
+            }
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ matrix.target }}-${{ matrix.suffix }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      # `just release-asset` cross-builds and tarballs one matrix entry. CUDA
+      # builds run inside an `nvidia/cuda:*-devel` image (carries nvcc); CPU and
+      # aarch64 use cross's default images. CUDA_COMPUTE_CAP picks the compute
+      # capability candle compiles kernels for — no GPU needed at build time.
+      - name: Build
+        env:
+          CUDA_COMPUTE_CAP: ${{ matrix.cuda_cap }}
+        run: >
+          just release-asset ${{ matrix.target }} ${{ matrix.suffix }}
+          "${{ matrix.features }}" "${{ matrix.cuda_image }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: s1-mini-${{ matrix.target }}-${{ matrix.suffix }}
+          path: s1-mini-${{ matrix.target }}-${{ matrix.suffix }}.tar.gz
+
+  create-release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      # backend.toml must ship as a release asset named exactly `backend.toml`:
+      # the super-stt indexer hashes these bytes into the registry's `manifest`
+      # pin, and the daemon verifies the installed manifest against that hash
+      # (reviewed == pinned == installed). Without it, the indexer falls back to
+      # un-pinned repo-source indexing. Checkout brings the tag's backend.toml
+      # into the workspace — the build tarballs don't carry it.
+      - uses: actions/checkout@v6
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            backend.toml
+            artifacts/**/*.tar.gz
+          generate_release_notes: true
