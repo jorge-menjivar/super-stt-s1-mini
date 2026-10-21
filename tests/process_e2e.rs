@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Gated real-model E2E. Provision `models/s1-mini-q4_k_m` under
-//! SUPER_STT_BACKEND_DIR (the two files `backend.toml` lists for it), then:
-//!   just test-e2e <backend-dir> [--features cuda]
-//! or, spelled out:
+//! Gated real-model E2E. `just test-e2e` fetches the three files
+//! `backend.toml` lists for `s1-mini-q4_k_m` and runs it:
+//!   just test-e2e [--no-default-features --features cuda]
+//! or, with the files already under `<dir>/models/s1-mini-q4_k_m`:
 //!   SUPER_STT_TEST_S1_MINI=1 SUPER_STT_BACKEND_DIR=<dir> \
-//!   cargo test [--features cuda] --test process_e2e -- --nocapture
+//!   cargo test --release [--no-default-features --features cuda] \
+//!     --test process_e2e -- --nocapture
 //!
-//! Pass `SUPER_STT_TEST_DEVICE=cpu` to load on the CPU even in a CUDA build.
+//! A build carries one accelerator, so `SUPER_STT_TEST_DEVICE` only sets the
+//! `device` the load names, as the daemon would.
 
 #![allow(clippy::doc_markdown)] // env var names in shell-command doc comment
 

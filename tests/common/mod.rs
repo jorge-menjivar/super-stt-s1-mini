@@ -102,6 +102,28 @@ impl Backend {
         Ok((status, bytes))
     }
 
+    /// The backend's process id, for signalling it.
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
+    /// The socket the backend serves on.
+    pub fn socket(&self) -> &Path {
+        &self.socket
+    }
+
+    /// Wait for the backend to exit, for up to `timeout`.
+    pub async fn exited(&mut self, timeout: Duration) -> Option<std::process::ExitStatus> {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                return Some(status);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        None
+    }
+
     pub async fn status(&self) -> Value {
         let (_, body) = self
             .request("GET", "/v1/status", &[], Vec::new())
@@ -114,6 +136,16 @@ impl Backend {
         let body =
             serde_json::to_vec(&serde_json::json!({ "name": name, "device": device })).unwrap();
         self.request("POST", "/v1/load", &[], body).await.unwrap().0
+    }
+
+    /// `POST /v1/prepare`, with the body of a load.
+    pub async fn prepare(&self, name: &str) -> (u16, Value) {
+        let body = serde_json::to_vec(&serde_json::json!({ "name": name })).unwrap();
+        let (status, body) = self
+            .request("POST", "/v1/prepare", &[], body)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&body).unwrap())
     }
 
     /// `POST /v1/process` with the given `x-stt-option-*` values.

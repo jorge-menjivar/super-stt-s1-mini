@@ -1,16 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-only
 #:schema https://jorge-menjivar.github.io/super-stt/backend.schema.json
-# S1-mini by Superwhisper — a local transcript normalizer. Subprocess backend.
-# See docs/protocol/backend/ in the super-stt repo.
+# S1-mini by Superwhisper — a local transcript normalizer, on Burn. Subprocess
+# backend. See docs/protocol/backend/ in the super-stt repo.
 
 [backend]
   id          = "app.super-stt.s1-mini"
   source      = "github.com/jorge-menjivar/super-stt-s1-mini"
   name        = "S1-mini"
-  version     = "0.1.0"
+  version     = "0.2.0"
   kind        = "subprocess"
   entrypoint  = "super-stt-backend-s1-mini"
-  contract    = "v2"
+  contract    = "v4"
+  product     = "super-stt"
   license     = "GPL-3.0-only"
   description = "S1-mini by Superwhisper, a small local model that cleans up dictated text. Removes fillers, resolves corrections, fixes punctuation and casing, and writes out numbers and dates. English only."
 
@@ -19,9 +20,10 @@
 [network]
   allowed_hosts = []
 
-  # One build per (target, accelerator, CUDA runtime, compute capability).
-  # candle compiles its CUDA kernels ahead of time for one compute capability,
-  # so there is one asset per SM the release workflow builds for.
+  # One build per (target, accelerator). CubeCL compiles the kernels at
+  # runtime on the host that runs them, so there is no compute-capability
+  # axis: what used to be twelve CUDA builds is two, one per CUDA major
+  # version.
 
 [[assets.subprocess]]
   file   = "s1-mini-x86_64-unknown-linux-gnu-cpu.tar.gz"
@@ -29,92 +31,67 @@
   accel  = "cpu"
 
 [[assets.subprocess]]
-  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda12-sm75.tar.gz"
+  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda12.tar.gz"
   target     = "x86_64-unknown-linux-gnu"
   accel      = "cuda"
   cuda_major = 12
-  cuda_sm    = 75
+  # No `cuda_sm`: the kernels are compiled on the host by NVRTC, so this
+  # build matches any compute capability, which is what omitting it declares.
 
 [[assets.subprocess]]
-  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda12-sm80.tar.gz"
-  target     = "x86_64-unknown-linux-gnu"
-  accel      = "cuda"
-  cuda_major = 12
-  cuda_sm    = 80
-
-[[assets.subprocess]]
-  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda12-sm86.tar.gz"
-  target     = "x86_64-unknown-linux-gnu"
-  accel      = "cuda"
-  cuda_major = 12
-  cuda_sm    = 86
-
-[[assets.subprocess]]
-  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda12-sm89.tar.gz"
-  target     = "x86_64-unknown-linux-gnu"
-  accel      = "cuda"
-  cuda_major = 12
-  cuda_sm    = 89
-
-[[assets.subprocess]]
-  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda12-sm90.tar.gz"
-  target     = "x86_64-unknown-linux-gnu"
-  accel      = "cuda"
-  cuda_major = 12
-  cuda_sm    = 90
-
-[[assets.subprocess]]
-  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda13-sm75.tar.gz"
+  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda13.tar.gz"
   target     = "x86_64-unknown-linux-gnu"
   accel      = "cuda"
   cuda_major = 13
-  cuda_sm    = 75
+
+  # AMD. The kernels are compiled at runtime here too, so this list is not the
+  # set of architectures the binary carries code for — it is the set the
+  # backend is claimed to work on, which the schema requires to be explicit. A
+  # card outside it gets the Vulkan build.
 
 [[assets.subprocess]]
-  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda13-sm80.tar.gz"
-  target     = "x86_64-unknown-linux-gnu"
-  accel      = "cuda"
-  cuda_major = 13
-  cuda_sm    = 80
+  file   = "s1-mini-x86_64-unknown-linux-gnu-rocm.tar.gz"
+  target = "x86_64-unknown-linux-gnu"
+  accel  = "rocm"
+  gfx    = [
+    "gfx908",
+    "gfx90a",
+    "gfx942",
+    "gfx1013",
+    "gfx1030",
+    "gfx1100",
+    "gfx1101",
+    "gfx1102",
+    "gfx1150",
+    "gfx1151",
+    "gfx1152",
+    "gfx1200",
+    "gfx1201",
+  ]
+
+  # The vendor-neutral GPU path: Intel, an AMD card on the Mesa driver, an
+  # NVIDIA card without CUDA installed. Slower than the native backends, and
+  # ranked below them by the daemon, but it is the only GPU some hosts have.
 
 [[assets.subprocess]]
-  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda13-sm86.tar.gz"
+  file       = "s1-mini-x86_64-unknown-linux-gnu-vulkan.tar.gz"
   target     = "x86_64-unknown-linux-gnu"
-  accel      = "cuda"
-  cuda_major = 13
-  cuda_sm    = 86
-
-[[assets.subprocess]]
-  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda13-sm89.tar.gz"
-  target     = "x86_64-unknown-linux-gnu"
-  accel      = "cuda"
-  cuda_major = 13
-  cuda_sm    = 89
-
-[[assets.subprocess]]
-  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda13-sm90.tar.gz"
-  target     = "x86_64-unknown-linux-gnu"
-  accel      = "cuda"
-  cuda_major = 13
-  cuda_sm    = 90
-
-[[assets.subprocess]]
-  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda13-sm100.tar.gz"
-  target     = "x86_64-unknown-linux-gnu"
-  accel      = "cuda"
-  cuda_major = 13
-  cuda_sm    = 100
-
-[[assets.subprocess]]
-  file       = "s1-mini-x86_64-unknown-linux-gnu-cuda13-sm120.tar.gz"
-  target     = "x86_64-unknown-linux-gnu"
-  accel      = "cuda"
-  cuda_major = 13
-  cuda_sm    = 120
+  accel      = "vulkan"
+  vulkan_api = "1.2"
 
 [[assets.subprocess]]
   file   = "s1-mini-aarch64-unknown-linux-gnu-cpu.tar.gz"
   target = "aarch64-unknown-linux-gnu"
+  accel  = "cpu"
+
+[[assets.subprocess]]
+  file   = "s1-mini-aarch64-apple-darwin-metal.tar.gz"
+  target = "aarch64-apple-darwin"
+  accel  = "metal"
+
+[[assets.subprocess]]
+  file   = "s1-mini-aarch64-apple-darwin-cpu.tar.gz"
+  target = "aarch64-apple-darwin"
   accel  = "cpu"
 
   # The three axes of the control line S1-mini is steered with. Each is a
@@ -159,10 +136,14 @@
   # Release v1 of the model, in the Q4_K_M build the model card recommends and
   # measured its accuracy on. Pinned to the Hugging Face commits that
   # published it and to the bytes' SHA-256, so what the daemon downloads is
-  # what was reviewed. The tokenizer is Qwen3's, shipped in the model's own
-  # repo. The repo also carries an f16 conversion; it is the intermediate the
-  # Q4_K_M is produced from, three times the download for no measured gain,
-  # so it is deliberately not listed.
+  # what was reviewed. The tokenizer and `config.json` are Qwen3's, shipped in
+  # the model's own repo. The repo also carries an f16 conversion; it is the
+  # intermediate the Q4_K_M is produced from, three times the download for no
+  # measured gain, so it is deliberately not listed. The backend dequantizes
+  # the Q4_K_M as it loads it, so the download stays the small one.
+  #
+  # `prepare_files` are what a GPU build compiles its kernels from while the
+  # GGUF downloads: `config.json` for the shapes, and the tokenizer.
 
 [[models]]
   name                 = "s1-mini-q4_k_m"
@@ -171,11 +152,19 @@
   primary_language     = "en"
   supported_languages  = ["en"]
   supported_devices    = ["cpu", "gpu"]
-  # 484 MB of weights plus the KV cache and activations for a 1k-token
-  # prompt; comfortably under 1 GiB, and it also runs on a laptop CPU.
-  estimated_vram_bytes = 1073741824
+  # The weights dequantized to f16 on a GPU, 1.5 GB with the output head that
+  # the GGUF stores apart from the embedding, plus the key/value caches and
+  # the kernels' scratch for a 1k-token prompt: 2.2 GiB on CUDA, 1.9 on
+  # Vulkan, measured on an RTX 3090. A first load's tuning peaks near 4 GiB
+  # for a moment.
+  estimated_vram_bytes = 2684354560
+  prepare_files        = [
+    "models/s1-mini-q4_k_m/config.json",
+    "models/s1-mini-q4_k_m/tokenizer.json",
+  ]
 
   files = [
     { url = "https://huggingface.co/superwhisper/s1-mini-GGUF/resolve/34add00a48a2e5d24e5a4ee5405a99620a3a240c/s1-mini-q4_k_m.gguf", destination = "models/s1-mini-q4_k_m/s1-mini-q4_k_m.gguf", sha256 = "3b41ebe2502cbd03e811d5d16b022f5ab551eda58d62597d152f89535003c634" },
     { url = "https://huggingface.co/superwhisper/s1-mini/resolve/88f6b15896c73bbb13a3b596e0afe8ea0d5150b4/tokenizer.json", destination = "models/s1-mini-q4_k_m/tokenizer.json", sha256 = "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4" },
+    { url = "https://huggingface.co/superwhisper/s1-mini/resolve/88f6b15896c73bbb13a3b596e0afe8ea0d5150b4/config.json", destination = "models/s1-mini-q4_k_m/config.json", sha256 = "660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd" },
   ]
