@@ -138,6 +138,13 @@ Burn holds more at idle because it multiplies dense f16 weights, 1.5 GB of
 them, where candle kept the Q4_K blocks. `estimated_vram_bytes` in
 `backend.toml` is set from the CUDA figure.
 
+On a Mac mini (M2, 8 GB) the Metal build writes the same text as CUDA for
+all 31 requests: 0.50 s for the median short request and 66 s for the long
+transcript, and a load of 8.5 s with the kernel cache warm or 31 s the first
+time. Its footprint, which counts the GPU's buffers in the shared memory, is
+1.9–2.5 GiB, and a first load peaks at 4.4 GiB. The CPU build there takes
+1.8 s for the median short request.
+
 **The CPU build is slower than candle's**, by 1.6 to 1.8 times: 3.2 s
 against 1.9 s for the median short request, 91 s against 56 s for the 30, and
 490 s against 277 s for the long transcript. Each token streams the dense f32
@@ -214,7 +221,8 @@ against that build (`docs/port-notes.md` has the numbers):
   values.
 - **The text.** A corpus of 31 requests — the model card's examples, every
   setting, dictation of the kind the daemon sends, and a 120-sentence
-  transcript — came back identical from Burn on CUDA, Vulkan and the CPU.
+  transcript — came back identical from Burn on CUDA, Vulkan and Metal, and
+  from the CPU build on x86_64 and Apple Silicon.
   Against candle it matched 30 of 31 on CUDA and 29 of 31 on the CPU, and
   candle's two builds disagree with each other on two: candle quantizes the
   activations to 8 bits inside its matmuls, so near-ties flip differently.

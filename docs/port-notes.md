@@ -138,8 +138,8 @@ other builds were using the CPU.
 |---|---:|---:|---:|---:|
 | CUDA, RTX 3090 | 1122–1131 | 181–223 s | 3.0 s | 6.9–8.1 s |
 | Vulkan, RTX 3090 | 564–584 | 24–56 s | 3.3–3.4 s | 1.6–2.2 s |
+| Metal, M2 | 322–324 | 31 s | 8.5 s | 3.4–3.5 s |
 | ROCm | not measured; uses Vulkan's count | | | |
-| Metal | not measured; uses Vulkan's count | | | |
 
 The daemon fails a load whose step and progress stand still for 120 s. The
 warm-up covers every prefill and decode window a request reaches
@@ -170,6 +170,37 @@ model with two decoder layers and every weight zero.
   embedding, output head and prefills, and the tuning sets the peak. Unlike
   Voxtral's, this prepare buys time, not memory: the build runs while the
   484 MB file downloads.
+
+## Apple Silicon
+
+Measured on 2026-10-21 on a Mac mini (M2, 8 GB, macOS 27.0) with the same
+requests. Memory is the process's physical footprint from `footprint`, which
+counts the GPU's buffers: they share the 8 GB.
+
+- **Output.** Metal in f16 wrote what CUDA writes for all 31 requests, the long
+  transcript included, and the CPU build in f32 for all 30 short ones.
+- **Requests after idle.** Requests after 15, 20 and 30 s of idle succeeded,
+  in 0.31–0.33 s against 0.27 s back to back.
+
+| | Metal | CPU (flex) |
+|---|---:|---:|
+| first request after a load | 0.28 s | 1.1 s |
+| short request, median | 0.50 s | 1.8 s |
+| 30 short requests | 13.8 s | 50 s |
+| long transcript, four pieces | 66 s | — |
+| load, kernel cache warm | 8.5 s | 2.1 s |
+| load, kernel cache empty | 31 s | — |
+| footprint after the load | 2.39–2.46 GiB | 3.86 GiB |
+| footprint between requests | 1.88–1.94 GiB | 3.86 GiB |
+| footprint peak of a first load | 4.42 GiB | — |
+
+- **A warm load** spends 7.1 s of its 8.5 s in the warm-up: with the kernels
+  cached, what is left is running the five prompts, on a GPU about a quarter
+  as fast as the 3090 on these requests.
+- **The CPU build** is faster here than on the Ryzen 9 5900X, 50 s against
+  91 s for the 30 short requests.
+- **A prepare** took 26 s and the load after it 4.5 s. It peaked at a
+  4.24 GiB footprint and left 0.47 GiB when it handed over.
 
 ## The long transcript
 

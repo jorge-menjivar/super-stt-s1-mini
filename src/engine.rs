@@ -188,12 +188,12 @@ fn compute_dtype(device: &Device) -> DType {
 }
 
 // What a cold warm-up wrote to the kernel cache, CUDA and Vulkan on an RTX
-// 3090 (see `docs/port-notes.md`). ROCm and Metal have not been measured and
-// use Vulkan's count.
+// 3090 and Metal on an M2 (see `docs/port-notes.md`). ROCm has not been
+// measured and uses Vulkan's count.
 const CUDA_CACHE_ENTRIES: u64 = 1131;
 const VULKAN_CACHE_ENTRIES: u64 = 584;
 const ROCM_CACHE_ENTRIES: u64 = VULKAN_CACHE_ENTRIES;
-const METAL_CACHE_ENTRIES: u64 = VULKAN_CACHE_ENTRIES;
+const METAL_CACHE_ENTRIES: u64 = 324;
 
 /// The entries a first load's warm-up writes to the kernel cache, which is
 /// what its `building_kernels` progress is measured against: tuning results
