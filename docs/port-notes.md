@@ -139,12 +139,13 @@ other builds were using the CPU.
 | CUDA, RTX 3090 | 1122–1131 | 181–223 s | 3.0 s | 6.9–8.1 s |
 | Vulkan, RTX 3090 | 564–584 | 24–56 s | 3.3–3.4 s | 1.6–2.2 s |
 | Metal, M2 | 322–324 | 31 s | 8.5 s | 3.4–3.5 s |
-| ROCm | not measured; uses Vulkan's count | | | |
+| ROCm, AMD BC-250 | 496–497 | 473 s | 15.6 s | 107.4–107.9 s |
 
 The daemon fails a load whose step and progress stand still for 120 s. The
 warm-up covers every prefill and decode window a request reaches
 (`engine::WARM_UP_PROMPTS`), so no request after it compiles anything: the
-first request after a load took 0.06 s on CUDA and 0.09 s on Vulkan.
+first request after a load took 0.06 s on CUDA and 0.09 s on Vulkan. The
+BC-250's longest stall comes within 13 s of the limit (see below).
 
 ## Building the kernels before the weights arrive
 
@@ -201,6 +202,44 @@ counts the GPU's buffers: they share the 8 GB.
   91 s for the 30 short requests.
 - **A prepare** took 26 s and the load after it 4.5 s. It peaked at a
   4.24 GiB footprint and left 0.47 GiB when it handed over.
+
+## ROCm on the AMD BC-250
+
+Measured on 2026-10-22 on an AMD BC-250 (RDNA1, gfx1013, ROCm 7.2), which
+shares 16 GB with its CPU, on its patched amdgpu driver
+(`bc250_flush_pasid_kiq=0`). Memory is the driver's VRAM and GTT in use across
+the system, less what was in use before the backend started.
+
+- **Output.** ROCm in f16 wrote what CUDA writes for all 31 requests, the long
+  transcript included.
+- **Requests after idle.** Requests after 15, 20 and 30 s of idle succeeded,
+  in 0.86–0.88 s against 0.85 s back to back.
+
+| | ROCm |
+|---|---:|
+| first request after a load | 0.86 s |
+| short request, median | 0.96 s |
+| 30 short requests | 28 s |
+| long transcript, four pieces | 266 s |
+| load, kernel cache warm | 15.6 s |
+| load, kernel cache empty | 473 s |
+| GPU memory, idle | 2.16–2.18 GiB |
+| GPU memory, peak during requests | 2.19 GiB |
+| GPU memory, peak of a first load | 4.08 GiB |
+
+- **The longest stall**, 107–108 s on a first load and on a prepare, is one
+  autotune: the prefill's attention at 1024 positions. RDNA1 has no f16
+  matrix instructions, so the tuner's first candidate is the flash `unit`
+  kernel, which CubeCL compiles through LLVM on the board's slow CPU, and
+  nothing reaches the cache until the tune ends. It is within 13 s of the
+  daemon's 120 s; Voxtral's longest on the board was 105.8 s.
+- **A warm load** spends 13.7 s of its 15.6 s in the warm-up.
+- **A prepare** took 460 s and the load after it 15.6 s. It peaked at 3.98 GiB
+  and left 0.27 GiB when it handed over.
+- **Four backends at once**, as the E2E test starts them, ran CubeCL's
+  throughput probe out of memory: `hipMalloc` refused its 1 GiB buffers 11
+  times. The tuner carried on and every test passed. A single backend hit
+  none.
 
 ## The long transcript
 

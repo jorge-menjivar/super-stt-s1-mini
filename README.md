@@ -145,6 +145,15 @@ time. Its footprint, which counts the GPU's buffers in the shared memory, is
 1.9–2.5 GiB, and a first load peaks at 4.4 GiB. The CPU build there takes
 1.8 s for the median short request.
 
+The ROCm build on an AMD BC-250 (gfx1013, ROCm 7.2), a small RDNA1 part that
+shares 16 GB with its CPU, writes the same text as CUDA too: 0.96 s for the
+median short request and 266 s for the long transcript, and a load of 15.6 s
+with the kernel cache warm or about 8 minutes the first time. That first
+load's longest pause in progress, 107 s, comes within 13 s of the 120 s after
+which Super STT gives up on a load: CubeCL compiles one attention kernel
+through LLVM there and writes nothing to the cache until it is done. As for
+Voxtral, the board needs its patched amdgpu driver.
+
 **The CPU build is slower than candle's**, by 1.6 to 1.8 times: 3.2 s
 against 1.9 s for the median short request, 91 s against 56 s for the 30, and
 490 s against 277 s for the long transcript. Each token streams the dense f32
@@ -221,8 +230,8 @@ against that build (`docs/port-notes.md` has the numbers):
   values.
 - **The text.** A corpus of 31 requests — the model card's examples, every
   setting, dictation of the kind the daemon sends, and a 120-sentence
-  transcript — came back identical from Burn on CUDA, Vulkan and Metal, and
-  from the CPU build on x86_64 and Apple Silicon.
+  transcript — came back identical from Burn on CUDA, Vulkan, ROCm and
+  Metal, and from the CPU build on x86_64 and Apple Silicon.
   Against candle it matched 30 of 31 on CUDA and 29 of 31 on the CPU, and
   candle's two builds disagree with each other on two: candle quantizes the
   activations to 8 bits inside its matmuls, so near-ties flip differently.
