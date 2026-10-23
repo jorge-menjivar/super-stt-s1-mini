@@ -5,6 +5,15 @@
 # `just --list` shows only the last comment line before a recipe, so any recipe
 # whose comment runs to more than one line carries a [doc("…")] summary for the
 # listing and keeps the prose above it for whoever opens this file.
+#
+# The model runs on Burn, pinned by revision to a fork in Cargo.toml. The first
+# build fetches and compiles it, which is slow; nothing else about the build is
+# unusual and there is no C toolchain to install.
+#
+# Every recipe that builds for a GPU passes `--no-default-features` with one
+# accelerator named, matching the release workflow: features are additive, so
+# a build that kept the default `flex` alongside `cuda` would carry two
+# backends.
 
 # Default: build release
 default: build-release
@@ -17,47 +26,51 @@ clean:
     cargo clean
     rm -f super-stt-backend-s1-mini lcov.info
 
-# Compiles with debug profile. Usage: just build-debug [--features cuda]
+# Compiles with debug profile. Usage: just build-debug [args]
 build-debug *args:
     cargo build {{ args }}
 
-# Compiles with release profile. Usage: just build-release [--features cuda]
+# Compiles with release profile — the pure-Rust CPU backend, the default.
+# Usage: just build-release [args]
 build-release *args:
     cargo build --release --locked {{ args }}
+
+# Build with CUDA. Needs the CUDA toolkit headers on the host; no GPU and no
+# compute capability are needed, since CubeCL compiles the kernels at runtime.
+[doc("Build with CUDA (needs the toolkit headers, no GPU)")]
+build-cuda *args:
+    cargo build --release --locked --no-default-features --features cuda {{ args }}
+
+# Build with ROCm. Needs the ROCm headers `cubecl-hip-sys` binds against.
+build-rocm *args:
+    cargo build --release --locked --no-default-features --features rocm {{ args }}
+
+# Build with Vulkan — the vendor-neutral GPU path. Needs no SDK to build; the
+# loader is found at runtime.
+[doc("Build with Vulkan (needs no SDK)")]
+build-vulkan *args:
+    cargo build --release --locked --no-default-features --features vulkan {{ args }}
+
+# Build with Metal, on macOS. Needs Xcode's command line tools; the kernels
+# are compiled at runtime.
+build-metal *args:
+    cargo build --release --locked --no-default-features --features metal {{ args }}
 
 # Build, then copy the binary to the entrypoint name `backend.toml` declares, so
 # this directory can be installed with the daemon's Import-from-dir path. Cargo
 # already names the artifact that, and the release workflow tarballs it under
 # the same name, so a local install and a published one stage the same bytes
-# under the same name. Usage: just stage [--features cuda]
-[doc("Build and stage the binary for Import-from-dir. Usage: just stage [--features cuda]")]
+# under the same name. Usage: just stage [--no-default-features --features cuda]
+[doc("Build and stage the binary for Import-from-dir. Usage: just stage [--no-default-features --features cuda]")]
 stage *args: (build-release args)
     cp target/release/super-stt-backend-s1-mini super-stt-backend-s1-mini
     @echo "staged super-stt-backend-s1-mini — this directory is now installable with Import from dir"
 
-# One release asset: cross-compile for `target` with `features`, then tarball
-# the binary under the name `backend.toml` declares for that (target, suffix).
-# CUDA builds run inside an `nvidia/cuda:*-devel` image (carries nvcc), picked
-# with `cuda_image`; CUDA_COMPUTE_CAP is forwarded into the container by the
-# `cross` passthrough in Cargo.toml. The release workflow calls this once per
-# matrix entry. Usage: just release-asset <target> <suffix> [features] [cuda_image]
-[doc("Cross-build one release tarball. Usage: just release-asset <target> <suffix> [features] [cuda_image]")]
-release-asset target suffix features="" cuda_image="":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ -n "{{ cuda_image }}" ]; then
-        export CROSS_TARGET_X86_64_UNKNOWN_LINUX_GNU_IMAGE="{{ cuda_image }}"
-    fi
-    cross build --release --locked --target {{ target }} \
-        --features "{{ features }}" --bin super-stt-backend-s1-mini
-    tar -czf "s1-mini-{{ target }}-{{ suffix }}.tar.gz" \
-        -C "target/{{ target }}/release" super-stt-backend-s1-mini
-    ls -lh s1-mini-*.tar.gz
-
-# Runs a clippy check — mirrors super-stt's lint. Default (CPU) features: the
-# CUDA feature needs a toolkit the hosted runner lacks, and every line of this
-# crate's own code is compiled either way. Run `just check --features cuda`
-# locally to additionally lint the candle CUDA backend.
+# Runs a clippy check — mirrors super-stt's lint. Default features lint the
+# flex build, which compiles every line of the backend's own code but the
+# other accelerators' arms of `select_device`; they differ only in which Burn
+# feature is on. Run `just check --no-default-features --features cuda` to
+# lint the CUDA build.
 [doc("Lint with clippy (pedantic, -D warnings)")]
 check *args:
     cargo clippy --all-targets {{ args }} -- -W clippy::pedantic -D warnings -D unused_must_use
@@ -73,17 +86,35 @@ fmt:
 fmt-check:
     cargo fmt --all -- --check
 
+# The suite needs no weights: the load, the warm-up and the decode run on a
+# tiny checkpoint the tests write themselves (`src/fixture.rs`).
+#
 # Run the test suite. Usage: just test [--verbose]
 test *args:
     cargo test --locked {{ args }}
 
-# Run the gated real-model test. Provision `models/s1-mini-q4_k_m` under the
-# given backend dir first (the two files `backend.toml` lists for it), then:
-#   just test-e2e <backend-dir> [--features cuda]
-[doc("Run the real-model E2E test. Usage: just test-e2e <backend-dir> [--features cuda]")]
-test-e2e backend_dir *args:
-    SUPER_STT_TEST_S1_MINI=1 SUPER_STT_BACKEND_DIR={{ backend_dir }} \
-        cargo test --locked {{ args }} --test process_e2e -- --nocapture
+# Everything `backend.toml` declares for the model, laid out as the daemon
+# lays it out, so `target/test-backend` works as `SUPER_STT_BACKEND_DIR`.
+[doc("Fetch the model's files into target/test-backend")]
+fetch-model:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    grep -o 'url = "[^"]*", destination = "models/s1-mini-q4_k_m/[^"]*"' backend.toml |
+    while read -r line; do
+        url=$(echo "$line" | sed 's/url = "\([^"]*\)".*/\1/')
+        dest="target/test-backend/$(echo "$line" | sed 's/.*destination = "\([^"]*\)"/\1/')"
+        mkdir -p "$(dirname "$dest")"
+        [ -f "$dest" ] || curl -fL --retry 3 -o "$dest" "$url"
+    done
+    echo "s1-mini-q4_k_m in target/test-backend/models/s1-mini-q4_k_m"
+
+# Run the gated real-model test against the files `fetch-model` provisions,
+# on whatever accelerator the args name:
+#   just test-e2e [--no-default-features --features cuda]
+[doc("Run the real-model E2E test. Usage: just test-e2e [--no-default-features --features cuda]")]
+test-e2e *args: fetch-model
+    SUPER_STT_TEST_S1_MINI=1 SUPER_STT_BACKEND_DIR={{ justfile_directory() }}/target/test-backend \
+        cargo test --release --locked {{ args }} --test process_e2e -- --nocapture
 
 # Measure code coverage (requires cargo-llvm-cov). --remap-path-prefix keeps the
 # report paths relative (src/...), and tests/ is excluded so only product code

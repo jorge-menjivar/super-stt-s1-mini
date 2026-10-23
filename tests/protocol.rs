@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Mock-daemon protocol test against the real binary with NO model provisioned.
 //! Verifies the `/v1` HTTP surface, the pre-load `starting` state, the role
-//! refusals, and a graceful load-error path. CPU-only — runs in CI.
+//! refusals, a graceful load-error path, the prepare, and a clean stop on
+//! SIGTERM. Needs no GPU, since nothing here reaches the device — runs in CI.
 
 mod common;
 use common::{Backend, MODEL};
@@ -80,4 +81,53 @@ async fn load_without_weights_reports_error() {
         s.get("reason").and_then(|r| r.as_str()).is_some(),
         "error state must carry a reason: {s}"
     );
+}
+
+#[tokio::test]
+async fn prepare_refuses_an_undeclared_model() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = Backend::spawn(dir.path()).await;
+
+    let (code, body) = backend.prepare("whisper-tiny").await;
+    assert_eq!(code, 400, "{body}");
+    assert_eq!(body["message"], "invalid_model");
+    assert_eq!(backend.status().await["state"], "starting");
+}
+
+/// Without its files a GPU build's prepare fails and goes back to `starting`;
+/// a CPU build has no kernels to build and is `prepared` at once. Either way
+/// it settles, and the model it names is reported.
+#[tokio::test]
+async fn a_prepare_settles() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = Backend::spawn(dir.path()).await;
+
+    let (code, body) = backend.prepare(MODEL).await;
+    assert_eq!(code, 202, "{body}");
+    assert_eq!(body["message"], "Preparing started");
+    let s = backend
+        .wait_for_state(&["prepared", "starting"], Duration::from_secs(30))
+        .await;
+    assert_eq!(s["model"]["name"], MODEL);
+    assert!(
+        s.get("reason").is_none(),
+        "a failed prepare carries no reason: {s}"
+    );
+}
+
+/// The daemon stops a backend with SIGTERM: it exits cleanly and takes its
+/// socket with it.
+#[tokio::test]
+async fn sigterm_stops_the_backend_and_removes_its_socket() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut backend = Backend::spawn(dir.path()).await;
+
+    let sent = std::process::Command::new("kill")
+        .args(["-TERM", &backend.pid().to_string()])
+        .status()
+        .unwrap();
+    assert!(sent.success());
+    let status = backend.exited(Duration::from_secs(10)).await;
+    assert!(status.is_some_and(|s| s.success()), "{status:?}");
+    assert!(!backend.socket().exists());
 }

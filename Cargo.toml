@@ -3,59 +3,90 @@
 # no super-stt code. Its own workspace root, with its own Cargo.lock.
 
 [package]
-  name    = "super-stt-backend-s1-mini"
-  version = "0.1.0"
-  edition = "2024"
-  license = "GPL-3.0-only"
-  publish = false
+  name        = "super-stt-backend-s1-mini"
+  version     = "0.2.0"
+  edition     = "2024"
+  description = "S1-mini transcript post-processor for Super STT."
+  repository  = "https://github.com/jorge-menjivar/super-stt-s1-mini"
+  license     = "GPL-3.0-only"
+  publish     = false
 
 # Own workspace root — never absorbed into a parent workspace.
 [workspace]
 
-  # cross (cross-rs): forward CUDA_COMPUTE_CAP into the build container so
-  # candle's kernels compile for the requested compute capability —
-  # `nvidia-smi` isn't available inside `docker build`, so without this
-  # candle-kernels fails to detect the cap. The release workflow sets
-  # CUDA_COMPUTE_CAP per matrix entry.
-  [workspace.metadata.cross.build.env]
-    passthrough = ["CUDA_COMPUTE_CAP"]
+[[bin]]
+  name = "super-stt-backend-s1-mini"
+  path = "src/main.rs"
 
 [dependencies]
-  anyhow              = "1"
-  axum                = {
+  anyhow     = "1"
+  axum       = {
     version          = "0.8",
     default-features = false,
     features         = ["json", "tokio"]
   }
-  # The same candle revision the Voxtral backend pins: upstream plus the
-  # fork's one fix, gating the `__hmax_nan`/`__hmin_nan` shim in
-  # candle-kernels so the CUDA build runs on sm75 (Turing). It carries
-  # `quantized_qwen3` with GGUF loading and a clearable KV cache.
-  candle-core         = {
-    git = "https://github.com/jorge-menjivar/candle.git",
-    rev = "eef47d5df512eefcba05a4eb7f3716ea2088287b"
+  # The model in `src/qwen3` is written against Burn, pinned by revision to
+  # the fork's `qwen3-tts-main` branch, which the Voxtral, Qwen ASR and Qwen
+  # TTS backends build on too: upstream Burn main plus fixes the fork carries,
+  # to its fusion crates and to `into_data`, whose bytes a later in-place
+  # kernel could overwrite. `burn` has no stability guarantee between
+  # revisions anyway.
+  #
+  # Burn is what buys this backend ROCm, Vulkan and Metal, which candle could
+  # not reach, and one CUDA build for every NVIDIA generation: CubeCL compiles
+  # every kernel at runtime for whatever device it finds, where candle
+  # compiled them ahead of time for one compute capability per build.
+  burn       = {
+    git      = "https://github.com/jorge-menjivar/burn.git",
+    rev      = "059c75e21c9f4e4fdb466bbdbf8710873e1e805d",
+    features = ["default", "cubecl"]
   }
-  candle-transformers = {
-    git = "https://github.com/jorge-menjivar/candle.git",
-    rev = "eef47d5df512eefcba05a4eb7f3716ea2088287b"
+  # Applies the weights this backend dequantizes from the GGUF to the
+  # modules, by parameter path. Only `std`: the checkpoint is read by
+  # `src/gguf.rs`, not by one of burn-store's own formats.
+  burn-store = {
+    git              = "https://github.com/jorge-menjivar/burn.git",
+    rev              = "059c75e21c9f4e4fdb466bbdbf8710873e1e805d",
+    default-features = false,
+    features         = ["std"]
   }
-  env_logger          = "0.11"
-  hyper               = { version = "1", features = ["http1", "server"] }
-  hyper-util          = {
+  # The binary's build ID, which CubeCL keys its compiled kernels on: the
+  # warm marker in `engine.rs` goes by the same key. Already in the graph
+  # through CubeCL.
+  buildid    = "1"
+  # CubeCL keeps compiled kernels and tuning results on disk only with its
+  # `persistence` feature, which Burn leaves to its GPU backends' defaults.
+  # The CPU build has none of those, yet compiles the kernel-cache setup in
+  # `engine.rs`; asking for the feature here keeps one configuration for
+  # every build. The patch below makes this the fork's crate, like Burn's.
+  cubecl     = {
+    git              = "https://github.com/tracel-ai/cubecl",
+    rev              = "33b6dfbd63cc8fa08346a2c77b04f156b9192e62",
+    default-features = false,
+    features         = ["persistence"]
+  }
+  env_logger = "0.11"
+  hyper      = { version = "1", features = ["http1", "server"] }
+  hyper-util = {
     version  = "0.1",
     features = ["http1", "server", "service", "tokio"]
   }
-  log                 = "0.4"
-  serde               = { version = "1", features = ["derive"] }
-  serde_json          = "1"
+  log        = "0.4"
+  serde      = { version = "1", features = ["derive"] }
+  serde_json = "1"
   # Reads the Qwen3 `tokenizer.json` the manifest provisions beside the
-  # weights. The same version candle-core already depends on at the pinned
-  # revision, so it adds no second copy; no default features requested here,
-  # since candle's own dependency already decides them.
-  tokenizers          = { version = "0.22", default-features = false }
-  tokio               = {
+  # weights. `fancy-regex` rather than the `onig` default: Qwen's
+  # pre-tokenizer pattern needs a lookahead, which the plain `regex` crate
+  # omits, and `fancy-regex` supplies it in Rust where `onig` would pull in a
+  # C library.
+  tokenizers = {
+    version          = "0.22",
+    default-features = false,
+    features         = ["fancy-regex"]
+  }
+  tokio      = {
     version  = "1",
-    features = ["macros", "net", "rt-multi-thread", "signal", "sync"]
+    features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"]
   }
 
 [dev-dependencies]
@@ -66,6 +97,57 @@
   # `ServiceExt::oneshot` for in-process router/handler tests.
   tower          = { version = "0.5", features = ["util"] }
 
+# One accelerator per build, as the asset it ships in declares. `flex` is the
+# default because it is the one that runs anywhere: a pure-Rust CPU backend
+# with nothing to detect and no driver to find, and S1-mini is small enough
+# to run on a laptop CPU.
+#
+# CubeCL compiles CUDA kernels through LLVM unless its C++ backend is asked
+# for, and LLVM has no tensor-core form for `tf32` or `bf16`, so the CUDA
+# build asks for the C++ backend. ROCm keeps LLVM: it has tensor-core forms
+# for `f16`, which every accelerator here computes in, and CubeCL's C++
+# backend for HIP compiles too slowly for a first load to keep reporting
+# progress. See `docs/port-notes.md`.
 [features]
-  default = []
-  cuda    = ["candle-core/cuda", "candle-transformers/cuda"]
+  default = ["flex"]
+  cuda    = ["burn/cuda", "cubecl/cuda-cpp"]
+  flex    = ["burn/flex"]
+  metal   = ["burn/metal"]
+  rocm    = ["burn/rocm"]
+  vulkan  = ["burn/vulkan"]
+
+[lints.clippy]
+  pedantic = "warn"
+
+# The CubeCL the Burn fork's `qwen3-tts-main` branch builds against: CubeCL
+# main plus the fork's `compilation-cache-main` branch. A `[patch]` in Burn's
+# own manifest does not reach a build that merely depends on Burn — patches
+# come from the root of the crate being built — so this backend has to repeat
+# it, or it would build a different CubeCL than the fork was measured on. It
+# keeps compiled kernels across runs by default, coalesces the sliced memory
+# pool's free slices lazily, lets the channel server take a partial batch when
+# its producer pauses, gives an empty allocation a real page, serializes the
+# kernel cache's statements, which Turso's reader bookkeeping cannot take from
+# several threads at once, and records CUDA and HIP graphs in relaxed mode, so
+# the device thread still serves other streams meanwhile.
+[patch."https://github.com/tracel-ai/cubecl"]
+  cubecl             = {
+    git = "https://github.com/jorge-menjivar/cubecl",
+    rev = "8f4b1b36dc7f870cc65d297b8b2286af2d8986dc"
+  }
+  cubecl-common      = {
+    git = "https://github.com/jorge-menjivar/cubecl",
+    rev = "8f4b1b36dc7f870cc65d297b8b2286af2d8986dc"
+  }
+  cubecl-environment = {
+    git = "https://github.com/jorge-menjivar/cubecl",
+    rev = "8f4b1b36dc7f870cc65d297b8b2286af2d8986dc"
+  }
+  cubecl-ir          = {
+    git = "https://github.com/jorge-menjivar/cubecl",
+    rev = "8f4b1b36dc7f870cc65d297b8b2286af2d8986dc"
+  }
+  cubecl-zspace      = {
+    git = "https://github.com/jorge-menjivar/cubecl",
+    rev = "8f4b1b36dc7f870cc65d297b8b2286af2d8986dc"
+  }
