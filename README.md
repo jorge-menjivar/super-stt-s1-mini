@@ -132,7 +132,7 @@ candle's column assumes the NVIDIA driver could keep the kernels it
 translated from candle's PTX in `$HOME/.nv`. The daemon's sandbox leaves that
 directory read-only, and without the driver's cache every candle load took
 7.5 s and its first request 6.5 s. This backend keeps the driver's cache
-beside its own, in `SUPER_STT_BACKEND_CACHE_DIR`.
+beside its own, in `SUPER_VOICE_BACKEND_CACHE_DIR`.
 
 Burn holds more at idle because it multiplies dense f16 weights, 1.5 GB of
 them, where candle kept the Q4_K blocks. `estimated_vram_bytes` in
@@ -174,7 +174,7 @@ CubeCL compiles the kernels a request needs the first time it meets them and
 tunes each operation for its shape, so a GPU load ends with a warm-up that
 runs every prefill and decode shape a request can reach: the first real
 request then finds everything ready. Compiled kernels are kept in
-`SUPER_STT_BACKEND_CACHE_DIR` when the daemon grants one, so only the first
+`SUPER_VOICE_BACKEND_CACHE_DIR` when the daemon grants one, so only the first
 load of a build pays; without it the backend logs a warning and recompiles on
 every load. The CPU build has no kernels to build; its load runs one short
 request only to prove the whole path works before it reports `ready`.
@@ -247,7 +247,7 @@ v4 for the post-processor role, as a subprocess backend:
 | `GET /v1/ping` | `pong`. |
 | `GET /v1/status` | `starting` → `loading` → `ready`, or `error` with a `reason`; `preparing` → `prepared` for a prepare. While loading or preparing it reports the `phase`, `step` and `progress`. |
 | `POST /v1/prepare` | Builds the kernels of the named model from its `prepare_files`; `prepared` at once on the CPU, or when this build already has them. `400 invalid_model` for a model it does not declare, `409 already_loading` once a load has begun. |
-| `POST /v1/load` | Loads the named model from `SUPER_STT_BACKEND_DIR/models/<name>`; `400 invalid_model` for a model it does not declare, `409 already_loading` while one is in flight. |
+| `POST /v1/load` | Loads the named model from `SUPER_VOICE_BACKEND_DIR/models/<name>`; `400 invalid_model` for a model it does not declare, `409 already_loading` while one is in flight. |
 | `POST /v1/process` | Normalizes `text` under the control line read from the `x-stt-option-*` headers; `400 invalid_text` when it is missing or blank, `409 not_ready` before a load, `500 processing_failed` on a decode error or a cancel. |
 | `POST /v1/cancel` | Stops the decode in flight; `409 nothing_in_progress` otherwise. |
 | `POST /v1/transcribe` | `400 unsupported_role` — this backend does not transcribe. |

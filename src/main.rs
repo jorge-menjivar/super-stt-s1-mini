@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! S1-mini subprocess backend: serves the Super STT `/v1` contract over a
-//! pathname Unix socket (`SUPER_STT_BACKEND_SOCKET`) for the **post-processor**
-//! role, loading the model from `SUPER_STT_BACKEND_DIR/models/<name>`.
+//! pathname Unix socket (`SUPER_VOICE_BACKEND_SOCKET`) for the **post-processor**
+//! role, loading the model from `SUPER_VOICE_BACKEND_DIR/models/<name>`.
 //! Self-contained — no super-stt deps.
 //!
 //! The daemon hands a finished transcript to `POST /v1/process`; this backend
@@ -9,7 +9,7 @@
 //! never sees audio.
 //!
 //! The model runs on Burn, whose GPU kernels CubeCL compiles at runtime and
-//! keeps in `SUPER_STT_BACKEND_CACHE_DIR` — the one writable directory a
+//! keeps in `SUPER_VOICE_BACKEND_CACHE_DIR` — the one writable directory a
 //! daemon new enough to grant it provides.
 
 // doc lint trips on prose like "candle"/"super-stt".
@@ -150,7 +150,7 @@ const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 
 /// Names the one writable directory the sandbox grants for keeping things
 /// across runs, where the compiled kernels go.
-const ENV_CACHE_DIR: &str = "SUPER_STT_BACKEND_CACHE_DIR";
+const ENV_CACHE_DIR: &str = "SUPER_VOICE_BACKEND_CACHE_DIR";
 
 /// Where the compiled kernels go.
 ///
@@ -199,7 +199,7 @@ fn main() -> anyhow::Result<()> {
     engine::configure_kernel_cache(&cache);
 
     let backend_dir =
-        std::env::var("SUPER_STT_BACKEND_DIR").context("SUPER_STT_BACKEND_DIR must be set")?;
+        std::env::var("SUPER_VOICE_BACKEND_DIR").context("SUPER_VOICE_BACKEND_DIR must be set")?;
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -209,8 +209,8 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn serve(backend_dir: PathBuf) -> anyhow::Result<()> {
-    let socket = std::env::var("SUPER_STT_BACKEND_SOCKET")
-        .context("SUPER_STT_BACKEND_SOCKET must be set")?;
+    let socket = std::env::var("SUPER_VOICE_BACKEND_SOCKET")
+        .context("SUPER_VOICE_BACKEND_SOCKET must be set")?;
     // Before the socket exists: the daemon may send SIGTERM as soon as it
     // sees it, and one that lands before the handler kills the process
     // outright, leaving the socket behind.

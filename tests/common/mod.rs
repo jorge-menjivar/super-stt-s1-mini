@@ -34,8 +34,8 @@ impl Backend {
             std::env::temp_dir().join(format!("s1-mini-test-{}-{idx}.sock", std::process::id()));
         let _ = std::fs::remove_file(&socket);
         let child = Command::new(env!("CARGO_BIN_EXE_super-stt-backend-s1-mini"))
-            .env("SUPER_STT_BACKEND_SOCKET", &socket)
-            .env("SUPER_STT_BACKEND_DIR", backend_dir)
+            .env("SUPER_VOICE_BACKEND_SOCKET", &socket)
+            .env("SUPER_VOICE_BACKEND_DIR", backend_dir)
             .env("RUST_LOG", "warn")
             .spawn()
             .expect("spawn backend binary");

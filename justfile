@@ -94,7 +94,7 @@ test *args:
     cargo test --locked {{ args }}
 
 # Everything `backend.toml` declares for the model, laid out as the daemon
-# lays it out, so `target/test-backend` works as `SUPER_STT_BACKEND_DIR`.
+# lays it out, so `target/test-backend` works as `SUPER_VOICE_BACKEND_DIR`.
 [doc("Fetch the model's files into target/test-backend")]
 fetch-model:
     #!/usr/bin/env bash
@@ -113,7 +113,7 @@ fetch-model:
 #   just test-e2e [--no-default-features --features cuda]
 [doc("Run the real-model E2E test. Usage: just test-e2e [--no-default-features --features cuda]")]
 test-e2e *args: fetch-model
-    SUPER_STT_TEST_S1_MINI=1 SUPER_STT_BACKEND_DIR={{ justfile_directory() }}/target/test-backend \
+    SUPER_STT_TEST_S1_MINI=1 SUPER_VOICE_BACKEND_DIR={{ justfile_directory() }}/target/test-backend \
         cargo test --release --locked {{ args }} --test process_e2e -- --nocapture
 
 # Measure code coverage (requires cargo-llvm-cov). --remap-path-prefix keeps the
