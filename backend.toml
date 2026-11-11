@@ -4,9 +4,6 @@
 # backend. See docs/protocol/backend/ in the super-voice repo.
 
 [backend]
-  # The id names the install directory. An install under the old id,
-  # app.super-stt.s1-mini, moves to this one on update and keeps its models,
-  # because the daemon finds it by `source`.
   id          = "app.super-voice.s1-mini"
   # The repository's old name, which GitHub redirects. `source` is the
   # backend's identity: installed copies find their updates by it, and a
