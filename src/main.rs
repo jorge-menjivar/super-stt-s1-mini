@@ -26,6 +26,7 @@ mod model_thread;
 mod progress;
 mod prompt;
 mod qwen3;
+mod vocabulary;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -49,6 +50,7 @@ use engine::{Engine, MODELS};
 use model_thread::ModelThread;
 use progress::{Phase, Report};
 use prompt::Control;
+use vocabulary::Vocabulary;
 
 #[derive(Clone, Copy)]
 enum LoadState {
@@ -530,8 +532,17 @@ async fn process(
         );
     }
     let control = control_from_headers(&headers);
+    // The user's vocabulary, which the model cannot read: applied to the
+    // transcript before the rewrite, and checked against the rewrite after it.
+    let vocabulary = Vocabulary::from_header(
+        headers
+            .get(vocabulary::HEADER)
+            .and_then(|v| v.to_str().ok()),
+    );
+    let input = vocabulary.spell(&text);
 
     let s2 = Arc::clone(&s);
+    let to_model = input.clone();
     let result = s
         .model
         .run(move |slot| {
@@ -541,14 +552,14 @@ async fn process(
             s2.cancel.store(false, Ordering::SeqCst);
             s2.in_flight.store(true, Ordering::SeqCst);
             let _idle = Idle(&s2.in_flight);
-            engine.normalize(&text, control, &s2.cancel)
+            engine.normalize(&to_model, control, &s2.cancel)
         })
         .await;
 
     match result {
         Some(Ok(text)) => (
             StatusCode::OK,
-            Json(json!({ "status": "success", "text": text })),
+            Json(json!({ "status": "success", "text": vocabulary.restore(&input, &text) })),
         ),
         Some(Err(e)) => (
             StatusCode::INTERNAL_SERVER_ERROR,

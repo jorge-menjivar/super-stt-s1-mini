@@ -49,6 +49,22 @@ A value outside the trained set is not sent to the model — the model card
 warns it garbles the output — so a typo in a setting falls back to the default
 and is logged.
 
+### Your vocabulary
+
+The words in the dictation context you have on, in **Speech to text →
+Contexts**, are kept through the rewrite. The model can't read them, since its
+input is the control line and the transcript in the format it was trained on.
+So the backend applies them around it:
+
+1. Before the rewrite, a term in the transcript is written the way your
+   vocabulary spells it, whatever its case or spacing: `SuperVoice` becomes
+   `Super Voice`.
+2. After it, a term the transcript had and the rewrite changed is put back
+   where the rewrite changed it. S1-mini comes from Superwhisper, and once
+   turned "SuperVoice" into "Superwhisper".
+
+A term the rewrite dropped stays dropped, and the context's prompt isn't used.
+
 ## The model
 
 One model, `s1-mini-q4_k_m`: release v1 of S1-mini in the Q4_K_M build
@@ -248,7 +264,7 @@ v4 for the post-processor role, as a subprocess backend:
 | `GET /v1/status` | `starting` → `loading` → `ready`, or `error` with a `reason`; `preparing` → `prepared` for a prepare. While loading or preparing it reports the `phase`, `step` and `progress`. |
 | `POST /v1/prepare` | Builds the kernels of the named model from its `prepare_files`; `prepared` at once on the CPU, or when this build already has them. `400 invalid_model` for a model it does not declare, `409 already_loading` once a load has begun. |
 | `POST /v1/load` | Loads the named model from `SUPER_STT_BACKEND_DIR/models/<name>`; `400 invalid_model` for a model it does not declare, `409 already_loading` while one is in flight. |
-| `POST /v1/process` | Normalizes `text` under the control line read from the `x-stt-option-*` headers; `400 invalid_text` when it is missing or blank, `409 not_ready` before a load, `500 processing_failed` on a decode error or a cancel. |
+| `POST /v1/process` | Normalizes `text` under the control line read from the `x-stt-option-*` headers, keeping the terms of `x-stt-vocabulary` (see [Your vocabulary](#your-vocabulary)); `400 invalid_text` when it is missing or blank, `409 not_ready` before a load, `500 processing_failed` on a decode error or a cancel. |
 | `POST /v1/cancel` | Stops the decode in flight; `409 nothing_in_progress` otherwise. |
 | `POST /v1/transcribe` | `400 unsupported_role` — this backend does not transcribe. |
 
