@@ -4,14 +4,22 @@
 # backend. See docs/protocol/backend/ in the super-voice repo.
 
 [backend]
-  id          = "app.super-stt.s1-mini"
-  source      = "github.com/super-libre/super-voice-s1-mini"
+  # The id names the install directory. An install under the old id,
+  # app.super-stt.s1-mini, moves to this one on update and keeps its models,
+  # because the daemon finds it by `source`.
+  id          = "app.super-voice.s1-mini"
+  # The repository's old name, which GitHub redirects. `source` is the
+  # backend's identity: installed copies find their updates by it, and a
+  # selected model is named by it.
+  source      = "github.com/jorge-menjivar/super-stt-s1-mini"
   name        = "S1-mini"
   version     = "0.2.0"
   kind        = "subprocess"
   entrypoint  = "super-voice-backend-s1-mini"
   contract    = "v4"
-  product     = "super-voice"
+  # Super STT releases refuse any other product, and Super Voice reads this
+  # one as its own.
+  product     = "super-stt"
   license     = "GPL-3.0-only"
   description = "S1-mini by Superwhisper, a small local model that cleans up dictated text. Removes fillers, resolves corrections, fixes punctuation and casing, and writes out numbers and dates. English only."
 
