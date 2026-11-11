@@ -1,6 +1,6 @@
-# S1-mini — a Super STT post-processor
+# S1-mini — a Super Voice post-processor
 
-[![coverage](https://img.shields.io/endpoint?url=https://jorge-menjivar.github.io/super-stt-s1-mini/coverage.json)](https://jorge-menjivar.github.io/super-stt-s1-mini/)
+[![coverage](https://img.shields.io/endpoint?url=https://super-libre.github.io/super-voice-s1-mini/coverage.json)](https://super-libre.github.io/super-voice-s1-mini/)
 
 Runs [S1-mini by Superwhisper](https://huggingface.co/superwhisper/s1-mini)
 on your transcripts before they are typed. S1-mini is a 0.6B-parameter text
@@ -20,7 +20,7 @@ four hundred and fifty dollars` → `$23,450`; `support at superwhisper dot com`
 → `support@superwhisper.com`).
 
 This is a **post-processor** backend for
-[Super STT](https://github.com/jorge-menjivar/super-stt): the daemon hands it a
+[Super Voice](https://github.com/jorge-menjivar/super-voice): the daemon hands it a
 finished transcript on `POST /v1/process` and it hands back a cleaned one. It
 does not transcribe audio. It runs entirely on your machine — the model is
 downloaded once, and the backend has no network at all.
@@ -148,7 +148,7 @@ candle's column assumes the NVIDIA driver could keep the kernels it
 translated from candle's PTX in `$HOME/.nv`. The daemon's sandbox leaves that
 directory read-only, and without the driver's cache every candle load took
 7.5 s and its first request 6.5 s. This backend keeps the driver's cache
-beside its own, in `SUPER_STT_BACKEND_CACHE_DIR`.
+beside its own, in `SUPER_VOICE_BACKEND_CACHE_DIR`.
 
 Burn holds more at idle because it multiplies dense f16 weights, 1.5 GB of
 them, where candle kept the Q4_K blocks. `estimated_vram_bytes` in
@@ -166,7 +166,7 @@ shares 16 GB with its CPU, writes the same text as CUDA too: 0.96 s for the
 median short request and 266 s for the long transcript, and a load of 15.6 s
 with the kernel cache warm or about 8 minutes the first time. That first
 load's longest pause in progress, 107 s, comes within 13 s of the 120 s after
-which Super STT gives up on a load: CubeCL compiles one attention kernel
+which Super Voice gives up on a load: CubeCL compiles one attention kernel
 through LLVM there and writes nothing to the cache until it is done. As for
 Voxtral, the board needs its patched amdgpu driver.
 
@@ -190,12 +190,12 @@ CubeCL compiles the kernels a request needs the first time it meets them and
 tunes each operation for its shape, so a GPU load ends with a warm-up that
 runs every prefill and decode shape a request can reach: the first real
 request then finds everything ready. Compiled kernels are kept in
-`SUPER_STT_BACKEND_CACHE_DIR` when the daemon grants one, so only the first
+`SUPER_VOICE_BACKEND_CACHE_DIR` when the daemon grants one, so only the first
 load of a build pays; without it the backend logs a warning and recompiles on
 every load. The CPU build has no kernels to build; its load runs one short
 request only to prove the whole path works before it reports `ready`.
 
-Super STT can have the kernels built before the weights arrive. `POST
+Super Voice can have the kernels built before the weights arrive. `POST
 /v1/prepare`, with the body of `/v1/load`, builds them from the model's
 `config.json` and `tokenizer.json` alone, which the manifest lists as its
 `prepare_files`, on a two-layer model whose weights are zeros. The status
@@ -255,7 +255,7 @@ against that build (`docs/port-notes.md` has the numbers):
 
 ## Protocol
 
-Implements the [Super STT backend contract](https://github.com/jorge-menjivar/super-stt/blob/main/docs/protocol/backend/contract.md)
+Implements the [Super Voice backend contract](https://github.com/jorge-menjivar/super-voice/blob/main/docs/protocol/backend/contract.md)
 v4 for the post-processor role, as a subprocess backend:
 
 | Route | Behavior |
@@ -263,7 +263,7 @@ v4 for the post-processor role, as a subprocess backend:
 | `GET /v1/ping` | `pong`. |
 | `GET /v1/status` | `starting` → `loading` → `ready`, or `error` with a `reason`; `preparing` → `prepared` for a prepare. While loading or preparing it reports the `phase`, `step` and `progress`. |
 | `POST /v1/prepare` | Builds the kernels of the named model from its `prepare_files`; `prepared` at once on the CPU, or when this build already has them. `400 invalid_model` for a model it does not declare, `409 already_loading` once a load has begun. |
-| `POST /v1/load` | Loads the named model from `SUPER_STT_BACKEND_DIR/models/<name>`; `400 invalid_model` for a model it does not declare, `409 already_loading` while one is in flight. |
+| `POST /v1/load` | Loads the named model from `SUPER_VOICE_BACKEND_DIR/models/<name>`; `400 invalid_model` for a model it does not declare, `409 already_loading` while one is in flight. |
 | `POST /v1/process` | Normalizes `text` under the control line read from the `x-stt-option-*` headers, keeping the terms of `x-stt-vocabulary` (see [Your vocabulary](#your-vocabulary)); `400 invalid_text` when it is missing or blank, `409 not_ready` before a load, `500 processing_failed` on a decode error or a cancel. |
 | `POST /v1/cancel` | Stops the decode in flight; `409 nothing_in_progress` otherwise. |
 | `POST /v1/transcribe` | `400 unsupported_role` — this backend does not transcribe. |

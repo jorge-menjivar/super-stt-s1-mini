@@ -86,7 +86,7 @@ translates on first use and caches under `$HOME/.nv`. With that cache off
 (`CUDA_CACHE_DISABLE=1`), its load took 7.5 s and its first request 6.5 s.
 The daemon's sandbox leaves `$HOME/.nv` read-only, so that is what candle paid
 there on every load. This backend points `CUDA_CACHE_PATH` into
-`SUPER_STT_BACKEND_CACHE_DIR`, beside CubeCL's own cache.
+`SUPER_VOICE_BACKEND_CACHE_DIR`, beside CubeCL's own cache.
 
 ### The CPU
 

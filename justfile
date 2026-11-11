@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Task runner for the standalone S1-mini backend. Mirrors the recipe names used
-# by the main super-stt repo (`just check`, `just ci`, etc.).
+# by the main super-voice repo (`just check`, `just ci`, etc.).
 #
 # `just --list` shows only the last comment line before a recipe, so any recipe
 # whose comment runs to more than one line carries a [doc("…")] summary for the
@@ -24,7 +24,7 @@ default: build-release
 [doc("Remove the target dir, the staged binary, and coverage output")]
 clean:
     cargo clean
-    rm -f super-stt-backend-s1-mini lcov.info
+    rm -f super-voice-backend-s1-mini lcov.info
 
 # Compiles with debug profile. Usage: just build-debug [args]
 build-debug *args:
@@ -63,10 +63,10 @@ build-metal *args:
 # under the same name. Usage: just stage [--no-default-features --features cuda]
 [doc("Build and stage the binary for Import-from-dir. Usage: just stage [--no-default-features --features cuda]")]
 stage *args: (build-release args)
-    cp target/release/super-stt-backend-s1-mini super-stt-backend-s1-mini
-    @echo "staged super-stt-backend-s1-mini — this directory is now installable with Import from dir"
+    cp target/release/super-voice-backend-s1-mini super-voice-backend-s1-mini
+    @echo "staged super-voice-backend-s1-mini — this directory is now installable with Import from dir"
 
-# Runs a clippy check — mirrors super-stt's lint. Default features lint the
+# Runs a clippy check — mirrors super-voice's lint. Default features lint the
 # flex build, which compiles every line of the backend's own code but the
 # other accelerators' arms of `select_device`; they differ only in which Burn
 # feature is on. Run `just check --no-default-features --features cuda` to
@@ -94,7 +94,7 @@ test *args:
     cargo test --locked {{ args }}
 
 # Everything `backend.toml` declares for the model, laid out as the daemon
-# lays it out, so `target/test-backend` works as `SUPER_STT_BACKEND_DIR`.
+# lays it out, so `target/test-backend` works as `SUPER_VOICE_BACKEND_DIR`.
 [doc("Fetch the model's files into target/test-backend")]
 fetch-model:
     #!/usr/bin/env bash
@@ -113,7 +113,7 @@ fetch-model:
 #   just test-e2e [--no-default-features --features cuda]
 [doc("Run the real-model E2E test. Usage: just test-e2e [--no-default-features --features cuda]")]
 test-e2e *args: fetch-model
-    SUPER_STT_TEST_S1_MINI=1 SUPER_STT_BACKEND_DIR={{ justfile_directory() }}/target/test-backend \
+    SUPER_VOICE_TEST_S1_MINI=1 SUPER_VOICE_BACKEND_DIR={{ justfile_directory() }}/target/test-backend \
         cargo test --release --locked {{ args }} --test process_e2e -- --nocapture
 
 # Measure code coverage (requires cargo-llvm-cov). --remap-path-prefix keeps the

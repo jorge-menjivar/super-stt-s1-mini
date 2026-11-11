@@ -163,7 +163,7 @@ jobs:
           fi
           "$build" build --release --locked --target ${{ matrix.target }} \
             --no-default-features --features "${{ matrix.features }}" \
-            --bin super-stt-backend-s1-mini
+            --bin super-voice-backend-s1-mini
 
       # The binary alone. No kernels ship with it: a GPU build compiles and
       # tunes its own on its first load, which reports that as its
@@ -171,7 +171,7 @@ jobs:
       - name: Create tarball
         run: |
           tar -czf "s1-mini-${{ matrix.target }}-${{ matrix.suffix }}.tar.gz" \
-            -C "target/${{ matrix.target }}/release" super-stt-backend-s1-mini
+            -C "target/${{ matrix.target }}/release" super-voice-backend-s1-mini
           ls -lh s1-mini-*.tar.gz
 
       - uses: actions/upload-artifact@v7
@@ -186,7 +186,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       # backend.toml must ship as a release asset named exactly `backend.toml`:
-      # the super-stt indexer hashes these bytes into the registry's `manifest`
+      # the super-voice indexer hashes these bytes into the registry's `manifest`
       # pin, and the daemon verifies the installed manifest against that hash
       # (reviewed == pinned == installed). Without it, the indexer falls back to
       # un-pinned repo-source indexing. Checkout brings the tag's backend.toml

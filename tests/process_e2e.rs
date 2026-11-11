@@ -3,11 +3,11 @@
 //! `backend.toml` lists for `s1-mini-q4_k_m` and runs it:
 //!   just test-e2e [--no-default-features --features cuda]
 //! or, with the files already under `<dir>/models/s1-mini-q4_k_m`:
-//!   SUPER_STT_TEST_S1_MINI=1 SUPER_STT_BACKEND_DIR=<dir> \
+//!   SUPER_VOICE_TEST_S1_MINI=1 SUPER_VOICE_BACKEND_DIR=<dir> \
 //!   cargo test --release [--no-default-features --features cuda] \
 //!     --test process_e2e -- --nocapture
 //!
-//! A build carries one accelerator, so `SUPER_STT_TEST_DEVICE` only sets the
+//! A build carries one accelerator, so `SUPER_VOICE_TEST_DEVICE` only sets the
 //! `device` the load names, as the daemon would.
 
 #![allow(clippy::doc_markdown)] // env var names in shell-command doc comment
@@ -24,18 +24,18 @@ const RAW: &str =
     "so um i need to like send the the report by uh friday no wait make that thursday";
 
 fn spawn_ready() -> Option<impl std::future::Future<Output = Backend>> {
-    if std::env::var("SUPER_STT_TEST_S1_MINI").is_err() {
+    if std::env::var("SUPER_VOICE_TEST_S1_MINI").is_err() {
         return None; // self-skip unless explicitly enabled
     }
     let backend_dir = PathBuf::from(
-        std::env::var("SUPER_STT_BACKEND_DIR")
-            .unwrap_or_else(|_| panic!("SUPER_STT_BACKEND_DIR (must contain models/{MODEL})")),
+        std::env::var("SUPER_VOICE_BACKEND_DIR")
+            .unwrap_or_else(|_| panic!("SUPER_VOICE_BACKEND_DIR (must contain models/{MODEL})")),
     );
     assert!(
         backend_dir.join("models").join(MODEL).exists(),
-        "provision models/{MODEL} under SUPER_STT_BACKEND_DIR first"
+        "provision models/{MODEL} under SUPER_VOICE_BACKEND_DIR first"
     );
-    let device = std::env::var("SUPER_STT_TEST_DEVICE").unwrap_or_default();
+    let device = std::env::var("SUPER_VOICE_TEST_DEVICE").unwrap_or_default();
     Some(async move {
         let backend = Backend::spawn(&backend_dir).await;
         assert_eq!(backend.load(MODEL, &device).await, 202);
