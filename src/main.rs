@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! S1-mini subprocess backend: serves the Super STT `/v1` contract over a
-//! pathname Unix socket (`SUPER_STT_BACKEND_SOCKET`) for the **post-processor**
-//! role, loading the model from `SUPER_STT_BACKEND_DIR/models/<name>`.
-//! Self-contained — no super-stt deps.
+//! S1-mini subprocess backend: serves the Super Voice `/v1` contract over a
+//! pathname Unix socket (`SUPER_VOICE_BACKEND_SOCKET`) for the **post-processor**
+//! role, loading the model from `SUPER_VOICE_BACKEND_DIR/models/<name>`.
+//! Self-contained — no super-voice deps.
 //!
 //! The daemon hands a finished transcript to `POST /v1/process`; this backend
 //! runs it through S1-mini by Superwhisper and returns the cleaned text. It
 //! never sees audio.
 //!
 //! The model runs on Burn, whose GPU kernels CubeCL compiles at runtime and
-//! keeps in `SUPER_STT_BACKEND_CACHE_DIR` — the one writable directory a
+//! keeps in `SUPER_VOICE_BACKEND_CACHE_DIR` — the one writable directory a
 //! daemon new enough to grant it provides.
+//!
+//! A Super STT daemon spells the variables `SUPER_STT_BACKEND_*`, and those
+//! are read when the Super Voice names are not set.
 
-// doc lint trips on prose like "candle"/"super-stt".
+// doc lint trips on prose like "candle"/"super-voice".
 #![allow(clippy::doc_markdown)]
 
 mod chunk;
@@ -28,6 +31,7 @@ mod prompt;
 mod qwen3;
 mod vocabulary;
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -150,9 +154,24 @@ impl AppState {
 /// How long a shutdown waits for the model thread.
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 
+/// Names the Unix socket to bind.
+const ENV_SOCKET: &str = "SUPER_VOICE_BACKEND_SOCKET";
+/// Names the backend's own directory.
+const ENV_DIR: &str = "SUPER_VOICE_BACKEND_DIR";
 /// Names the one writable directory the sandbox grants for keeping things
 /// across runs, where the compiled kernels go.
-const ENV_CACHE_DIR: &str = "SUPER_STT_BACKEND_CACHE_DIR";
+const ENV_CACHE_DIR: &str = "SUPER_VOICE_BACKEND_CACHE_DIR";
+
+/// One of the `ENV_*` variables, or its Super STT spelling when it is not set.
+///
+/// A Super Voice daemon sets both spellings. A Super STT daemon sets only
+/// `SUPER_STT_BACKEND_*`, and its releases are still installed.
+fn backend_var(name: &str) -> Option<OsString> {
+    std::env::var_os(name).or_else(|| {
+        let rest = name.strip_prefix("SUPER_VOICE_")?;
+        std::env::var_os(format!("SUPER_STT_{rest}"))
+    })
+}
 
 /// Where the compiled kernels go.
 ///
@@ -161,7 +180,7 @@ const ENV_CACHE_DIR: &str = "SUPER_STT_BACKEND_CACHE_DIR";
 /// GPU build compiles and tunes its kernels again on every load, and every
 /// load reports itself as an initial setup.
 fn cache_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os(ENV_CACHE_DIR) {
+    if let Some(dir) = backend_var(ENV_CACHE_DIR) {
         log::info!("keeping compiled kernels in {}", Path::new(&dir).display());
         return PathBuf::from(dir);
     }
@@ -200,8 +219,7 @@ fn main() -> anyhow::Result<()> {
     }
     engine::configure_kernel_cache(&cache);
 
-    let backend_dir =
-        std::env::var("SUPER_STT_BACKEND_DIR").context("SUPER_STT_BACKEND_DIR must be set")?;
+    let backend_dir = backend_var(ENV_DIR).with_context(|| format!("{ENV_DIR} must be set"))?;
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -211,8 +229,9 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn serve(backend_dir: PathBuf) -> anyhow::Result<()> {
-    let socket = std::env::var("SUPER_STT_BACKEND_SOCKET")
-        .context("SUPER_STT_BACKEND_SOCKET must be set")?;
+    let socket = PathBuf::from(
+        backend_var(ENV_SOCKET).with_context(|| format!("{ENV_SOCKET} must be set"))?,
+    );
     // Before the socket exists: the daemon may send SIGTERM as soon as it
     // sees it, and one that lands before the handler kills the process
     // outright, leaving the socket behind.
@@ -222,12 +241,13 @@ async fn serve(backend_dir: PathBuf) -> anyhow::Result<()> {
     let state = Arc::new(AppState::new(backend_dir));
     let app = router(Arc::clone(&state));
 
-    if let Some(parent) = Path::new(&socket).parent() {
+    if let Some(parent) = socket.parent() {
         std::fs::create_dir_all(parent).ok();
     }
     let _ = std::fs::remove_file(&socket);
-    let listener = UnixListener::bind(&socket).with_context(|| format!("bind {socket}"))?;
-    log::info!("S1-mini backend serving /v1 on {socket}");
+    let listener =
+        UnixListener::bind(&socket).with_context(|| format!("bind {}", socket.display()))?;
+    log::info!("S1-mini backend serving /v1 on {}", socket.display());
 
     loop {
         let (stream, _) = tokio::select! {

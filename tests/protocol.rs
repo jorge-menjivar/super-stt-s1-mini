@@ -5,7 +5,7 @@
 //! SIGTERM. Needs no GPU, since nothing here reaches the device — runs in CI.
 
 mod common;
-use common::{Backend, MODEL};
+use common::{Backend, Daemon, MODEL};
 use std::time::Duration;
 
 #[tokio::test]
@@ -23,6 +23,22 @@ async fn ping_and_starting_state() {
 
     let s = backend.status().await;
     assert_eq!(s["state"], "starting", "no load yet → starting");
+}
+
+/// Super STT releases are still installed, and their daemon spells the
+/// variables `SUPER_STT_BACKEND_*`: the backend starts under those names, and
+/// keeps its kernels in the cache directory they grant.
+#[tokio::test]
+async fn starts_under_the_super_stt_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend_dir = dir.path().join("backend");
+    let cache = dir.path().join("cache");
+    std::fs::create_dir(&backend_dir).unwrap();
+    let backend = Backend::spawn_by(Daemon::SuperStt, &backend_dir, Some(&cache)).await;
+
+    let s = backend.status().await;
+    assert_eq!(s["state"], "starting", "{s}");
+    assert!(cache.is_dir(), "{} was not created", cache.display());
 }
 
 #[tokio::test]

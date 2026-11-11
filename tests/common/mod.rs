@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Minimal "mock daemon": spawns the real backend binary and drives the `/v1`
 //! contract over the Unix socket the same way the daemon does. Self-contained —
-//! no `super-stt` dependency.
+//! no `super-voice` dependency.
 
 #![allow(dead_code)] // each test file uses a subset
 
@@ -26,19 +26,53 @@ pub struct Backend {
     socket: PathBuf,
 }
 
+/// The daemon a backend is started by, which decides how its variables are
+/// spelled.
+#[derive(Clone, Copy)]
+pub enum Daemon {
+    /// `SUPER_VOICE_BACKEND_*`.
+    SuperVoice,
+    /// `SUPER_STT_BACKEND_*`, from a Super STT release.
+    SuperStt,
+}
+
+impl Daemon {
+    fn var(self, name: &str) -> String {
+        match self {
+            Self::SuperVoice => format!("SUPER_VOICE_BACKEND_{name}"),
+            Self::SuperStt => format!("SUPER_STT_BACKEND_{name}"),
+        }
+    }
+}
+
 impl Backend {
     /// Spawn the backend binary against `backend_dir`; wait until `/v1/ping` answers.
     pub async fn spawn(backend_dir: &Path) -> Backend {
+        Self::spawn_by(Daemon::SuperVoice, backend_dir, None).await
+    }
+
+    /// [`spawn`](Self::spawn), with the variables spelled the way `daemon`
+    /// spells them, and `cache_dir` granted when there is one.
+    pub async fn spawn_by(daemon: Daemon, backend_dir: &Path, cache_dir: Option<&Path>) -> Backend {
         let idx = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
         let socket =
             std::env::temp_dir().join(format!("s1-mini-test-{}-{idx}.sock", std::process::id()));
         let _ = std::fs::remove_file(&socket);
-        let child = Command::new(env!("CARGO_BIN_EXE_super-stt-backend-s1-mini"))
-            .env("SUPER_STT_BACKEND_SOCKET", &socket)
-            .env("SUPER_STT_BACKEND_DIR", backend_dir)
-            .env("RUST_LOG", "warn")
-            .spawn()
-            .expect("spawn backend binary");
+        let mut command = Command::new(env!("CARGO_BIN_EXE_super-voice-backend-s1-mini"));
+        // Neither spelling comes in from the environment the tests run in.
+        for name in ["SOCKET", "DIR", "CACHE_DIR"] {
+            for spelling in [Daemon::SuperVoice, Daemon::SuperStt] {
+                command.env_remove(spelling.var(name));
+            }
+        }
+        command
+            .env(daemon.var("SOCKET"), &socket)
+            .env(daemon.var("DIR"), backend_dir)
+            .env("RUST_LOG", "warn");
+        if let Some(cache_dir) = cache_dir {
+            command.env(daemon.var("CACHE_DIR"), cache_dir);
+        }
+        let child = command.spawn().expect("spawn backend binary");
         let backend = Backend { child, socket };
         // Generous headroom: the freshly-built binary may start slowly on a cold
         // CI runner. A timeout here panics with a clear "did not start" message.
