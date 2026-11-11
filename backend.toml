@@ -20,6 +20,15 @@
 [network]
   allowed_hosts = []
 
+# The vocabulary of the user's dictation context, as an `x-stt-vocabulary`
+# header. The model has nowhere to read it, so the backend applies it around
+# the model: a term in the transcript is written as the vocabulary spells it,
+# and one the rewrite changed is put back (see src/vocabulary.rs). The
+# context's prompt is sent too and not read: S1-mini follows no instruction
+# but its control line.
+[capabilities]
+  context = true
+
   # One build per (target, accelerator). CubeCL compiles the kernels at
   # runtime on the host that runs them, so there is no compute-capability
   # axis: what used to be twelve CUDA builds is two, one per CUDA major
